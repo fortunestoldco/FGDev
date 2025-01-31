@@ -1,0 +1,15 @@
+/ {
+    adc0: adc@40007000 {
+        compatible = "espressif,esp32c6-adc";
+        reg = <0x40007000 0x1000>;
+        interrupt-controller;
+        #interrupt-cells = <2>;
+        status = "okay";
+    };
+
+    button0: button@60000000 {
+        compatible = "gpio-keys";
+        gpios = <&gpio0 0 GPIO_ACTIVE_LOW>;
+        label = "User Button";
+    };
+};

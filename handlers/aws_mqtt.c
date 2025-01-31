@@ -1,104 +1,58 @@
-#include <zephyr/kernel.h>
-#include <zephyr/net/mqtt.h>
-#include <zephyr/logging/log.h>
-#include <zephyr/net/socket.h>
-#include "config.h"
+#include <zephyr.h>
+#include <net/mqtt.h>
+#include <net/socket.h>
+#include <sys/byteorder.h>
+#include <string.h>
+#include <stdio.h>
 
-LOG_MODULE_REGISTER(aws_mqtt, CONFIG_APP_LOG_LEVEL);
+#define AWS_ENDPOINT "your_mqtt_broker_hostname"
 
-#define MQTT_BUFFER_SIZE 256
+struct mqtt_client_ctx {
+    struct mqtt_client client;
+    struct sockaddr_in broker;
+};
 
-static uint8_t rx_buffer[MQTT_BUFFER_SIZE];
-static uint8_t tx_buffer[MQTT_BUFFER_SIZE];
-static struct mqtt_client client_ctx;
+static struct mqtt_client_ctx client_ctx;
 
-static void mqtt_evt_handler(struct mqtt_client *client,
-                           const struct mqtt_evt *evt)
-{
-    switch (evt->type) {
-    case MQTT_EVT_CONNACK:
-        if (evt->result) {
-            LOG_ERR("MQTT connect failed: %d", evt->result);
-            break;
-        }
-        LOG_INF("MQTT client connected");
-        break;
-
-    case MQTT_EVT_DISCONNECT:
-        LOG_INF("MQTT client disconnected");
-        break;
-
-    case MQTT_EVT_PUBLISH:
-        LOG_INF("MQTT PUBLISH received");
-        break;
-
-    default:
-        LOG_DBG("MQTT event: %d", evt->type);
-        break;
-    }
-}
-
-void aws_mqtt_init(void)
+int aws_mqtt_init(void)
 {
     int err;
-    struct sockaddr_in *broker = &(struct sockaddr_in){
-        .sin_family = AF_INET,
-        .sin_port = htons(AWS_PORT)
-    };
-    
-    err = inet_pton(AF_INET, AWS_ENDPOINT, &broker->sin_addr);
-    if (err != 1) {
-        LOG_ERR("Invalid broker address");
-        return;
+
+    struct sockaddr_in broker_addr;
+    broker_addr.sin_family = AF_INET;
+    broker_addr.sin_port = htons(CONFIG_MQTT_BROKER_PORT);
+
+    err = inet_pton(AF_INET, AWS_ENDPOINT, &broker_addr.sin_addr);
+    if (err <= 0) {
+        printk("Invalid broker address\n");
+        return -EINVAL;
     }
 
-    mqtt_client_init(&client_ctx);
+    client_ctx.broker = broker_addr;
+    client_ctx.client.broker = (struct sockaddr *)&client_ctx.broker;
+    client_ctx.client.broker_len = sizeof(struct sockaddr_in);
 
-    client_ctx.broker = (struct sockaddr *)broker;
-    client_ctx.broker_length = sizeof(struct sockaddr_in);
-    
-    client_ctx.client_id.utf8 = (uint8_t *)AWS_CLIENT_ID;
-    client_ctx.client_id.size = strlen(AWS_CLIENT_ID);
-    
-    client_ctx.password = NULL;
-    client_ctx.user_name = NULL;
-    
-    client_ctx.protocol_version = MQTT_VERSION_3_1_1;
-    client_ctx.transport.type = MQTT_TRANSPORT_NON_SECURE; // Change to MQTT_TRANSPORT_SECURE for TLS
-    
-    client_ctx.rx_buf = rx_buffer;
-    client_ctx.rx_buf_size = sizeof(rx_buffer);
-    client_ctx.tx_buf = tx_buffer;
-    client_ctx.tx_buf_size = sizeof(tx_buffer);
-    
-    client_ctx.evt_cb = mqtt_evt_handler;
+    // Initialize MQTT client here
+    // ...
 
-    err = mqtt_connect(&client_ctx);
-    if (err) {
-        LOG_ERR("MQTT connect failed: %d", err);
-        return;
-    }
-
-    LOG_INF("AWS MQTT initialized");
+    return 0;
 }
 
-int aws_mqtt_publish(const char *topic, const char *payload)
+int aws_mqtt_publish(const char *topic, const uint8_t *payload, size_t len)
 {
-    struct mqtt_publish_param param = {
-        .message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE,
-        .message.topic.topic.utf8 = (uint8_t *)topic,
-        .message.topic.topic.size = strlen(topic),
-        .message.payload.data = payload,
-        .message.payload.len = strlen(payload),
-        .message_id = k_cycle_get_32(),
-        .dup_flag = 0,
-        .retain_flag = 0
-    };
+    struct mqtt_publish_param param;
 
-    return mqtt_publish(&client_ctx, &param);
-}
+    param.message.topic.qos = MQTT_QOS_1_AT_LEAST_ONCE;
+    param.message.topic.topic.utf8 = (uint8_t *)topic;
+    param.message.topic.topic.size = strlen(topic);
+    param.message.payload.data = (uint8_t *)payload;
+    param.message.payload.len = len;
+    param.message.payload.offset = 0;
+    param.topic.topic = NULL;
+    param.message_id = 0;
+    param.message.topic.type = MQTT_TOPIC_UTF8;
+    param.dupflag = 0;
+    param.retain = 0;
 
-struct mqtt_client *aws_mqtt_get_client(void)
-{
-    return &client_ctx;
+    return mqtt_publish(&client_ctx.client, &param);
 }
