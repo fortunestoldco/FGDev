@@ -7,7 +7,6 @@
 #define LED_GPIO_PIN        13
 #define BUTTON_GPIO_PORT    "GPIO_0"
 #define BUTTON_GPIO_PIN     12
-#define BUTTON_DEBOUNCE_TIME 300  // 300ms debounce time
 
 // Sensor I2C addresses
 #define AHT10_ADDR         0x38
@@ -32,8 +31,8 @@
 #define ADC_REFERENCE ADC_REF_INTERNAL
 #define ADC_ACQUISITION_TIME ADC_ACQ_TIME_DEFAULT
 #define ADC_CHANNEL 0
-
-// Button configurations
 #define BUTTON_DEBOUNCE_TIME K_MSEC(100)
+#define CACHE_FILE_PATH "/lfs/cache.json"
+#define CONFIG_APP_VERSION "1.0.0"  // Add version number
 
 #endif /* CONFIG_H */

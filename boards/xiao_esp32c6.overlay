@@ -4,10 +4,17 @@
     };
 };
 
-
 /* Enable WiFi */
 &wifi {
     status = "okay";
+};
+
+/* Enable I2C0 for sensors */
+&i2c0 {
+    status = "okay";
+    clock-frequency = <100000>;
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-names = "default";
 };
 
 /* Enable Flash for Settings */
@@ -23,4 +30,9 @@
             reg = <0x3a0000 0x10000>;
         };
     };
+};
+
+/* GPIO configurations */
+&gpio0 {
+    status = "okay";
 };

@@ -25,18 +25,18 @@ void soft_reset(void);
 void hard_reset(void);
 
 // Button Handler Function
-static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+#include <zephyr/kernel.h>
+
+static uint32_t last_press_time;
+
+void button_pressed(void)
 {
     uint32_t current_time = k_uptime_get_32();
-    if ((current_time - last_press_time) > BUTTON_DEBOUNCE_TIME) {
-        press_count++;
-        last_press_time = current_time;
+    uint32_t debounce_time = BUTTON_DEBOUNCE_TIME;  // This will be in milliseconds
 
-        if (press_count == 1) {
-            // Schedule a delayed work to detect double press or long press
-            // For simplicity, directly handling here
-            LOG_INF("Button pressed once");
-        }
+    if ((current_time - last_press_time) > debounce_time) {
+        // Button press logic here
+        last_press_time = current_time;
     }
 }
 

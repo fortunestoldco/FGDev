@@ -17,15 +17,45 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/adc.h>
-#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/net/mqtt.h>
-#include <zephyr/sys/util.h>
-#include <zephyr/settings/settings.h>
-#include <zephyr/fs/fs.h>
-#include <zephyr/logging/log.h>
-
+#include <zephyr/drivers/i2c.h>
 #include "config.h"
+#include "aht10_driver.h"
+#include "max17043_driver.h"
+#include "soil_moisture_sensor.h"
+#include <zephyr/drivers/adc.h>
+
+#define ADC1_CHANNEL0  0   // ADC1 channel 0
+
+static int init_adc(void)
+{
+    int ret;
+    const struct device *adc_dev;
+    
+    // Get ADC device
+    adc_dev = DEVICE_DT_GET(DT_NODELABEL(adc0));
+    if (!device_is_ready(adc_dev)) {
+        printk("ADC device not ready\n");
+        return -ENODEV;
+    }
+
+    // ESP32 specific ADC channel config
+    struct adc_channel_cfg channel_cfg = {
+        .channel_id = ADC1_CHANNEL0,
+        .differential = false,
+        .gain = ADC_GAIN_1,
+        .reference = ADC_REF_INTERNAL,
+        .acquisition_time = ADC_ACQ_TIME_DEFAULT,
+    };
+
+    ret = adc_channel_setup(adc_dev, &channel_cfg);
+    if (ret < 0) {
+        printk("Failed to setup ADC channel (err %d)\n", ret);
+        return ret;
+    }
+
+    return 0;
+}
 
 LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
@@ -244,6 +274,15 @@ static void read_sensors(struct plant_data *data)
 
     data->timestamp = k_uptime_get();
 }
+
+// Add work handler declaration and definition in the same file
+static K_WORK_DELAYABLE_DEFINE(publish_work);
+
+static void publish_work_handler(struct k_work *work)
+{
+    // Your publish work handler implementation
+}
+
 
 static void generate_and_store_uuid(void)
 {

@@ -31,27 +31,27 @@ static void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt 
 }
 
 // Initialize MQTT Client
-void aws_mqtt_init(void)
-{
-    struct mqtt_client_config config = {
-        .broker = {
-            .hostname = AWS_ENDPOINT,
-            .port = AWS_PORT
-        },
-        .client_id = {
-            .utf8 = (uint8_t *)AWS_CLIENT_ID,
-            .size = strlen(AWS_CLIENT_ID)
-        },
-        .cb = mqtt_evt_handler  // Set the callback handler
-    };
+#include <zephyr/net/mqtt.h>
 
-    mqtt_client_init(&client, &config);
+static struct mqtt_client client;
+
+int aws_mqtt_init(void)
+{
+    int ret;
+
+    // Initialize the MQTT client structure
+    mqtt_client_init(&client);
+
+    // Configure MQTT client
+    client.broker = (struct sockaddr_in){
+        .sin_family = AF_INET,
+        .sin_port = htons(8883),  // Default MQTT over TLS port
+    };
     
-    int ret = mqtt_connect(&client);
-    if (ret != 0) {
-        LOG_ERR("Failed to connect to MQTT broker: %d", ret);
-        wifi_connected = false;
-    } else {
-        LOG_INF("Connected to MQTT broker");
-    }
+    client.client_id.utf8 = (uint8_t *)CONFIG_MQTT_CLIENT_ID;
+    client.client_id.size = strlen(CONFIG_MQTT_CLIENT_ID);
+    
+    client.evt_cb = mqtt_evt_handler;  // Set callback handler
+
+    return 0;
 }

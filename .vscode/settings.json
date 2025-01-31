@@ -3,7 +3,8 @@
         "kernel.h": "c",
         "socket.h": "c",
         "reboot.h": "c",
-        "adc.h": "c"
+        "adc.h": "c",
+        "settings.h": "c"
     },
     "idf.openOcdConfigs": [
         "board/esp32c6-builtin.cfg"
