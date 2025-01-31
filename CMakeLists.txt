@@ -1,3 +1,4 @@
+set(BOARD xiao_esp32c6)
 set(BOARD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(DTC_OVERLAY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/boards/xiao_esp32c6.overlay")
 
