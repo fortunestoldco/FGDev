@@ -21,10 +21,19 @@
 // Timing configurations
 #define POLLING_INTERVAL   (60 * 1000) // 1 minute in milliseconds
 
-// AWS IoT configurations
-#define AWS_ENDPOINT      "your-iot-endpoint.amazonaws.com"
-#define AWS_PORT         8883
-#define AWS_CLIENT_ID    "plant_monitor"
-#define MQTT_PUBLISH_TOPIC "plants/"
+#define AWS_ENDPOINT "your-endpoint.iot.region.amazonaws.com"
+#define AWS_PORT 8883
+#define AWS_CLIENT_ID "your-client-id"
+#define MQTT_PUBLISH_TOPIC "your/topic/"
+
+// ADC configurations
+#define ADC_RESOLUTION 12
+#define ADC_GAIN ADC_GAIN_1
+#define ADC_REFERENCE ADC_REF_INTERNAL
+#define ADC_ACQUISITION_TIME ADC_ACQ_TIME_DEFAULT
+#define ADC_CHANNEL 0
+
+// Button configurations
+#define BUTTON_DEBOUNCE_TIME K_MSEC(100)
 
 #endif /* CONFIG_H */
