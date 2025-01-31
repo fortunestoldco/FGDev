@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "kernel.h": "c",
+        "socket.h": "c",
+        "reboot.h": "c",
+        "adc.h": "c"
+    }
+}

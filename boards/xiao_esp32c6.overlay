@@ -1,0 +1,26 @@
+/ {
+    chosen {
+        zephyr,settings-partition = &nvs_partition;
+    };
+};
+
+
+/* Enable WiFi */
+&wifi {
+    status = "okay";
+};
+
+/* Enable Flash for Settings */
+&flash0 {
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        /* Reserve 64K for NVS */
+        nvs_partition: partition@3a0000 {
+            label = "nvs";
+            reg = <0x3a0000 0x10000>;
+        };
+    };
+};
