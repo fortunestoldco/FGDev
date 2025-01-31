@@ -5,15 +5,8 @@
 
 LOG_MODULE_REGISTER(aws_mqtt, LOG_LEVEL_INF);
 
+extern bool wifi_connected;  // Declare as extern since it's defined in main.c
 static struct mqtt_client client;
-
-// Initialize MQTT Client
-void aws_mqtt_init(void)
-{
-    // Configure MQTT client (same as in main.c or separate as per design)
-    // Implement MQTT event callbacks
-    // Connect to MQTT broker
-}
 
 // MQTT Event Callback
 static void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt *evt)
@@ -34,5 +27,31 @@ static void mqtt_evt_handler(struct mqtt_client *const c, const struct mqtt_evt 
             break;
         default:
             break;
+    }
+}
+
+// Initialize MQTT Client
+void aws_mqtt_init(void)
+{
+    struct mqtt_client_config config = {
+        .broker = {
+            .hostname = AWS_ENDPOINT,
+            .port = AWS_PORT
+        },
+        .client_id = {
+            .utf8 = (uint8_t *)AWS_CLIENT_ID,
+            .size = strlen(AWS_CLIENT_ID)
+        },
+        .cb = mqtt_evt_handler  // Set the callback handler
+    };
+
+    mqtt_client_init(&client, &config);
+    
+    int ret = mqtt_connect(&client);
+    if (ret != 0) {
+        LOG_ERR("Failed to connect to MQTT broker: %d", ret);
+        wifi_connected = false;
+    } else {
+        LOG_INF("Connected to MQTT broker");
     }
 }

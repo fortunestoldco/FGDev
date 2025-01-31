@@ -21,8 +21,10 @@ int max17043_read(struct device *i2c_dev, float *battery_level)
     }
 
     uint16_t soc = (data[0] << 8) | data[1];
-    *battery_level = soc / 256.0; // Convert to percentage
+    *battery_level = soc / 256.0f; // Use 'f' suffix for float literal
 
-    LOG_INF("MAX17043 Battery Level: %.2f%%", *battery_level);
+    LOG_INF("MAX17043 Battery Level: %d.%02d%%", 
+            (int)*battery_level, 
+            (int)((*battery_level - (int)*battery_level) * 100));
     return 0;
 }

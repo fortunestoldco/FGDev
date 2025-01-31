@@ -18,24 +18,30 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/net/mqtt.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/adc.h>
+#include <zephyr/fs/fs.h>
 #include "config.h"
 
 // Forward declarations
+static void button_init_handler(const struct device *dev, uint32_t pin);
+static void publish_work_handler(struct k_work *work);
+static void generate_and_store_uuid(void);
+static void connect_wifi(void);
 void ble_provisioning_init(void);
 void aws_mqtt_init(void);
 void button_init(void);
 
 // Global Variables
-static struct device *i2c_dev;
-static struct device *button_dev;
-static struct device *led_dev;
-static struct device *adc_dev;
+static const struct device *i2c_dev;
+static const struct device *button_dev;
+static const struct device *led_dev;
+static const struct device *adc_dev;
 
 // MQTT Client
 static struct mqtt_client client;
@@ -79,7 +85,7 @@ static struct settings_handler settings_handler_data = {
     .h_set = settings_set,
 };
 
-void main(void)
+int main(void)
 {
     printk("Starting Plant Monitor Firmware\n");
 
@@ -95,7 +101,7 @@ void main(void)
     i2c_dev = device_get_binding(I2C_DEV_NAME);
     if (!i2c_dev) {
         printk("I2C: Device not found.\n");
-        return;
+        return -1;
     }
 
     // Initialize GPIO for Button
@@ -105,15 +111,15 @@ void main(void)
     led_dev = device_get_binding(LED_GPIO_PORT);
     if (!led_dev) {
         printk("GPIO: LED device not found.\n");
-        return;
+        return -1;
     }
     gpio_pin_configure(led_dev, LED_GPIO_PIN, GPIO_OUTPUT_ACTIVE | GPIO_ACTIVE_LOW);
 
     // Initialize ADC for Photoresistor
-    adc_dev = device_get_binding(DT_LABEL(DT_NODELABEL(adc0)));
-    if (!adc_dev) {
-        printk("ADC: Device not found.\n");
-        return;
+    adc_dev = DEVICE_DT_GET(DT_NODELABEL(adc0));
+    if (!device_is_ready(adc_dev)) {
+        printk("ADC: Device not ready.\n");
+        return -1;
     }
 
     // Initialize BLE Provisioning
@@ -128,24 +134,37 @@ void main(void)
     // Schedule Data Publishing
     k_work_init_delayable(&publish_work, publish_work_handler);
     k_work_schedule(&publish_work, K_MSEC(POLLING_INTERVAL));
+
+    return 0;
 }
 
 // UUID Generation and Storage
 static void generate_and_store_uuid(void)
 {
-    struct uuid uuid;
-    uint8_t uuid_buff[16];
-    char uuid_str[37] = {0};
-
-    // Read existing UUID
-    if (settings_load_subtree(STORAGE_NAMESPACE)) {
-        // UUID not set
-        sys_uuid_get(&uuid);
-        uuid_to_str(&uuid, uuid_str, sizeof(uuid_str));
-        settings_save_one(KEY_UUID, uuid_str);
+    uint8_t uuid[16];
+    char uuid_str[37];
+    
+    if (settings_load_subtree(STORAGE_NAMESPACE) < 0) {
+        // Generate random bytes for UUID
+        for (int i = 0; i < sizeof(uuid); i++) {
+            uuid[i] = sys_rand32_get() & 0xFF;
+        }
+        
+        // Set version 4 and variant bits according to RFC 4122
+        uuid[6] = (uuid[6] & 0x0F) | 0x40;  // Version 4
+        uuid[8] = (uuid[8] & 0x3F) | 0x80;  // Variant 1
+        
+        // Format UUID string
+        snprintf(uuid_str, sizeof(uuid_str),
+                "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                uuid[0], uuid[1], uuid[2], uuid[3],
+                uuid[4], uuid[5], uuid[6], uuid[7],
+                uuid[8], uuid[9], uuid[10], uuid[11],
+                uuid[12], uuid[13], uuid[14], uuid[15]);
+                
+        settings_save_one(KEY_UUID, uuid_str, strlen(uuid_str));
         printk("Generated and stored UUID: %s\n", uuid_str);
     } else {
-        // UUID exists
         printk("UUID already exists.\n");
     }
 }
@@ -153,17 +172,21 @@ static void generate_and_store_uuid(void)
 // Read Sensor Data
 static void read_sensors(struct plant_data *data)
 {
+    int ret;
+
     // Read Temperature and Humidity from AHT10
-    if (aht10_read(i2c_dev, &data->temperature, &data->humidity) != 0) {
+    ret = i2c_write_read(i2c_dev, AHT10_ADDR, NULL, 0, &data->temperature, sizeof(float));
+    if (ret != 0) {
         printk("Failed to read AHT10 sensor.\n");
-        data->temperature = 0.0;
-        data->humidity = 0.0;
+        data->temperature = 0.0f;
+        data->humidity = 0.0f;
     }
 
     // Read Soil Moisture from Capacitive Sensor
-    if (soil_moisture_read(i2c_dev, &data->soil_moisture) != 0) {
+    ret = i2c_read(i2c_dev, &data->soil_moisture, sizeof(float), SOIL_MOISTURE_ADDR);
+    if (ret != 0) {
         printk("Failed to read Soil Moisture sensor.\n");
-        data->soil_moisture = 0.0;
+        data->soil_moisture = 0.0f;
     }
 
     // Read Light Level from Photoresistor
@@ -175,13 +198,14 @@ static void read_sensors(struct plant_data *data)
     };
     if (adc_read(adc_dev, &sequence) != 0) {
         printk("Failed to read ADC for light level.\n");
-        data->light_level = 0.0;
+        data->light_level = 0.0f;
     }
 
     // Read Battery Level from MAX17043
-    if (max17043_read(i2c_dev, &data->battery_level) != 0) {
+    ret = i2c_read(i2c_dev, &data->battery_level, sizeof(float), MAX17043_ADDR);
+    if (ret != 0) {
         printk("Failed to read MAX17043 fuel gauge.\n");
-        data->battery_level = 0.0;
+        data->battery_level = 0.0f;
     }
 
     // Get current timestamp
@@ -191,7 +215,7 @@ static void read_sensors(struct plant_data *data)
 // Publish Work Handler
 static void publish_work_handler(struct k_work *work)
 {
-    struct plant_data data;
+    struct plant_data data = {0};
     read_sensors(&data);
 
     if (wifi_connected) {
@@ -252,13 +276,13 @@ static void publish_data(struct plant_data *data)
         .message.topic.topic.size = strlen(topic),
         .message.payload.data = payload,
         .message.payload.len = strlen(payload),
-        .message_id = 0,
+        .message_id = sys_rand32_get(),
     };
 
     ret = mqtt_publish(&client, &param);
     if (ret != 0) {
         printk("Failed to publish MQTT message: %d\n", ret);
-        cache_data(&data);
+        cache_data(data);
     } else {
         printk("Published data to AWS IoT: %s\n", topic);
     }
@@ -267,12 +291,11 @@ static void publish_data(struct plant_data *data)
 // Cache Data Locally
 static void cache_data(struct plant_data *data)
 {
-    // Implement local caching using LittleFS
     struct fs_file_t file;
     int ret;
 
     fs_file_t_init(&file);
-    ret = fs_open(&file, "/cache/data.json", FS_O_CREATE | FS_O_RDWR | FS_O_APPEND);
+    ret = fs_open(&file, "/cache/data.json", FS_O_CREATE | FS_O_WRITE | FS_O_APPEND);
     if (ret < 0) {
         printk("Failed to open cache file: %d\n", ret);
         return;
@@ -319,16 +342,9 @@ static void cache_data(struct plant_data *data)
 // Connect to Wi-Fi
 static void connect_wifi(void)
 {
-    // Implement Wi-Fi connection using stored credentials
-    // This is a simplified example. In a real implementation, use the WLAN API.
-
-    // Example:
-    // 1. Retrieve SSID and password from settings
-    // 2. Initialize Wi-Fi with these credentials
-    // 3. Attempt to connect
-    // 4. Set wifi_connected accordingly
-
-    // For demonstration, assume connected
+    // This is a placeholder for actual WiFi implementation
+    // You'll need to implement the actual WiFi connection logic using your specific WiFi driver
+    
     wifi_connected = true;
     printk("Connected to Wi-Fi.\n");
 }
@@ -336,36 +352,32 @@ static void connect_wifi(void)
 // Initialize BLE Provisioning
 void ble_provisioning_init(void)
 {
-    // Implement BLE provisioning service
-    // This involves setting up BLE GATT services to accept Wi-Fi credentials and plant details
-    // For brevity, a simplified placeholder is provided
-
+    // This is a placeholder for BLE provisioning implementation
+    // You'll need to implement the actual BLE provisioning logic
+    
     printk("Initializing BLE Provisioning...\n");
-    // Initialize BLE stack
-    // Register GATT services
-    // Handle provisioning callbacks
 }
 
 // Initialize AWS MQTT
 void aws_mqtt_init(void)
 {
-    // Initialize MQTT client structure
-    client.broker.uri = AWS_ENDPOINT;
-    client.broker.port = AWS_PORT;
-    client.evt_cb = NULL; // Define your event callback
-    client.client_id.utf8 = AWS_CLIENT_ID;
-    client.client_id.size = strlen(AWS_CLIENT_ID);
+    struct mqtt_client_config config = {
+        .broker = {
+            .hostname = AWS_ENDPOINT,
+            .port = AWS_PORT
+        },
+        .credentials = {
+            .ca_cert = AWS_ROOT_CA,
+            .ca_cert_len = sizeof(AWS_ROOT_CA),
+            .client_cert = AWS_CLIENT_CERT,
+            .client_cert_len = sizeof(AWS_CLIENT_CERT),
+            .private_key = AWS_CLIENT_KEY,
+            .private_key_len = sizeof(AWS_CLIENT_KEY)
+        }
+    };
 
-    // Set TLS configuration
-    client.transport.type = MQTT_TRANSPORT_SECURE;
-    client.transport.tls_config.ca_cert = resources_AmazonRootCA1_pem_start;
-    client.transport.tls_config.ca_cert_size = resources_AmazonRootCA1_pem_end - resources_AmazonRootCA1_pem_start;
-    client.transport.tls_config.client_cert = resources_ClientCert_pem_start;
-    client.transport.tls_config.client_cert_size = resources_ClientCert_pem_end - resources_ClientCert_pem_start;
-    client.transport.tls_config.client_key = resources_ClientKey_pem_start;
-    client.transport.tls_config.client_key_size = resources_ClientKey_pem_end - resources_ClientKey_pem_start;
-
-    // Connect to MQTT broker
+    mqtt_client_init(&client, &config);
+    
     int ret = mqtt_connect(&client);
     if (ret != 0) {
         printk("Failed to connect to MQTT broker: %d\n", ret);
@@ -374,6 +386,15 @@ void aws_mqtt_init(void)
         printk("Connected to MQTT broker.\n");
     }
 }
+
+// Button callback handler
+static void button_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+    printk("Button pressed!\n");
+    // Implement button press handling logic here
+}
+
+static struct gpio_callback button_cb_data;
 
 // Initialize Button
 void button_init(void)
@@ -385,7 +406,8 @@ void button_init(void)
     }
 
     gpio_pin_configure(button_dev, BUTTON_GPIO_PIN, GPIO_INPUT | GPIO_PULL_UP);
+    gpio_pin_interrupt_configure(button_dev, BUTTON_GPIO_PIN, GPIO_INT_EDGE_TO_ACTIVE);
 
-    // Initialize button handler
-    button_init_handler(button_dev, BUTTON_GPIO_PIN);
+    gpio_init_callback(&button_cb_data, button_callback, BIT(BUTTON_GPIO_PIN));
+    gpio_add_callback(button_dev, &button_cb_data);
 }

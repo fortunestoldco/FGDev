@@ -1,9 +1,16 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/reboot.h>
+#include <zephyr/settings/settings.h>
 #include "config.h"
 
 LOG_MODULE_REGISTER(button_handler, LOG_LEVEL_INF);
+
+// Define button debounce time if not in config.h
+#ifndef BUTTON_DEBOUNCE_TIME
+#define BUTTON_DEBOUNCE_TIME 300  // 300ms debounce time
+#endif
 
 // Button debounce variables
 static uint32_t last_press_time = 0;
@@ -13,7 +20,7 @@ static uint32_t press_count = 0;
 static struct gpio_callback button_cb_data;
 
 // Forward declarations
-void ble_provisioning_init(void);
+static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins);
 void soft_reset(void);
 void hard_reset(void);
 
@@ -28,9 +35,7 @@ static void button_pressed(const struct device *dev, struct gpio_callback *cb, u
         if (press_count == 1) {
             // Schedule a delayed work to detect double press or long press
             // For simplicity, directly handling here
-            // Implement timers as needed
-            // Example:
-            // If pressed and held for certain time, trigger long press
+            LOG_INF("Button pressed once");
         }
     }
 }
