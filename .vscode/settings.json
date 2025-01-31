@@ -4,7 +4,8 @@
         "socket.h": "c",
         "reboot.h": "c",
         "adc.h": "c",
-        "settings.h": "c"
+        "settings.h": "c",
+        "gpio.h": "c"
     },
     "idf.openOcdConfigs": [
         "board/esp32c6-builtin.cfg"

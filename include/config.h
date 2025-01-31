@@ -32,6 +32,7 @@
 #define ADC_ACQUISITION_TIME ADC_ACQ_TIME_DEFAULT
 #define ADC_CHANNEL 0
 #define BUTTON_DEBOUNCE_TIME K_MSEC(100)
+#define CONFIG_BT_DEVICE_NAME "FGDev"
 #define CACHE_FILE_PATH "/lfs/cache.json"
 #define CONFIG_APP_VERSION "1.0.0"  // Add version number
 
