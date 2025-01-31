@@ -9,7 +9,6 @@ project(FGDev)
 
 target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-
 target_sources(app PRIVATE
     src/main.c
     handlers/ble_provisioning.c
